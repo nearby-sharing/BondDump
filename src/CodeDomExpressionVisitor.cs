@@ -6,23 +6,23 @@ using System.Reflection;
 
 namespace BondDump;
 
+// Inspired by https://medium.com/@canerten/linq-expression-trees-lambdas-to-codedom-conversion-8e434aa06380
+
 public sealed class CodeDomExpressionVisitor
 {
     public static CodeDomExpressionVisitor Instance => field ??= new();
 
-    readonly Dictionary<string, CodeTypeMember> m_members = [];
-
-    Scope _rootScope, _currentScope;
+    Scope _currentScope;
     public CodeDomExpressionVisitor()
     {
-        _rootScope = _currentScope = new() { Parent = null };
+        _currentScope = new() { Parent = null };
     }
 
     public CodeMemberMethod Convert(LambdaExpression lambda, string name)
     {
         ArgumentOutOfRangeException.ThrowIfNotEqual(lambda.TailCall, false);
 
-        _rootScope = _currentScope = new() { Parent = null };
+        _currentScope = new() { Parent = null };
 
         CodeMemberMethod method = new()
         {
@@ -50,8 +50,7 @@ public sealed class CodeDomExpressionVisitor
         InvocationExpression invocationExpression => VisitInvocation(invocationExpression),
         MemberExpression memberExpression => VisitMemberAccess(memberExpression),
         DefaultExpression defaultExpression => VisitDefault(defaultExpression),
-        LambdaExpression lambda => VisitLambda(lambda), // ToDo
-        ParameterExpression parameterExpression => VisitParameter(parameterExpression), // ToDo
+        ParameterExpression parameterExpression => VisitParameter(parameterExpression),
         // Statments //
         GotoExpression gotoExpression => VisitGoTo(gotoExpression),
         ConditionalExpression conditionalExpression => VisitConditional(conditionalExpression),
@@ -261,44 +260,6 @@ public sealed class CodeDomExpressionVisitor
 
         // ToDo: arg vs var
         return new CodeArgumentReferenceExpression(_currentScope.Mangle(p.Name));
-    }
-
-    // ======================= //
-
-    protected CodeMethodReferenceExpression VisitLambda(LambdaExpression lambda)
-    {
-        var body = Visit(lambda.Body);
-        CodeMemberMethod lambdaMethod = new()
-        {
-            Name = lambda.Type.Name
-        };
-        if (lambdaMethod.Name.Contains("Func"))
-            lambdaMethod.ReturnType = new CodeTypeReference(lambda.Body.Type);
-
-        foreach (var item in lambda.Parameters)
-        {
-            lambdaMethod.Parameters.Add(new CodeParameterDeclarationExpression(item.Type, item.Name));
-        }
-
-        if (body is CodeExpression expression)
-        {
-            if (lambdaMethod.ReturnType.BaseType.Contains("Void"))
-                lambdaMethod.Statements.Add(expression);
-
-            else
-                lambdaMethod.Statements.Add(new CodeMethodReturnStatement(expression));
-        }
-        else if (body is CodeStatement statement)
-        {
-            lambdaMethod.Statements.Add(statement);
-        }
-        else
-        {
-            throw new Exception("investigate...");
-        }
-
-        m_members[lambda.Type.FullName] = lambdaMethod;
-        return new CodeMethodReferenceExpression(new CodeThisReferenceExpression(), lambdaMethod.Name);
     }
 
     sealed record Scope
