@@ -1,0 +1,123 @@
+namespace ShortDev.Microsoft.ConnectedDevices.Serialization
+
+enum PropertyType {
+	PropertyType_Empty = 0,
+
+	PropertyType_UInt8 = 1,
+	PropertyType_Int16 = 2,
+	PropertyType_UInt16 = 3,
+	PropertyType_Int32 = 4,
+	PropertyType_UInt32 = 5,
+	PropertyType_Int64 = 6,
+	PropertyType_UInt64 = 7,
+	PropertyType_Float = 8,
+	PropertyType_Double = 9,
+	PropertyType_Char = 10,
+	PropertyType_Boolean = 11,
+	PropertyType_WString = 12,
+	PropertyType_DateTimeOffset = 13,
+	PropertyType_TimeSpan = 14,
+	PropertyType_Guid = 15,
+	PropertyType_Point = 16,
+	PropertyType_Size = 17,
+	PropertyType_Rect = 18,
+	PropertyType_ValueSet = 19,
+
+	PropertyType_UInt8Array = 20,
+	PropertyType_Int16Array = 21,
+	PropertyType_UInt16Array = 22,
+	PropertyType_Int32Array = 23,
+	PropertyType_UInt32Array = 24,
+	PropertyType_Int64Array = 25,
+	PropertyType_UInt64Array = 26,
+	PropertyType_FloatArray = 27,
+	PropertyType_DoubleArray = 28,
+	PropertyType_CharArray = 29,
+	PropertyType_BooleanArray = 30,
+	PropertyType_WStringArray = 31,
+	PropertyType_DateTimeOffsetArray = 32,
+	PropertyType_TimeSpanArray = 33,
+	PropertyType_GuidArray = 34,
+	PropertyType_PointArray = 35,
+	PropertyType_SizeArray = 36,
+	PropertyType_RectArray = 37,
+
+	PropertyType_String = 39,
+	PropertyType_StringArray = 40  
+}
+
+struct UUID {
+	0: uint32 Data1;
+	1: uint16 Data2;
+	2: uint16 Data3;
+	3: uint64 Data4;
+}
+
+struct Point {
+	0: float x;
+	1: float y;
+}
+
+struct Size {
+	0: float width;
+	1: float height;
+}
+
+struct Rect {
+	0: float x;
+	1: float y;
+	2: float width;
+	3: float height;
+}
+
+struct ValueSet;
+
+struct PropertyValue {
+	0: required PropertyType Type = PropertyType_Empty;
+	100: uint8 UInt8Value;
+	101: int16 Int16Value;
+	102: uint16 UInt16Value;
+	103: int32 Int32Value;
+	104: uint32 UInt32Value;
+	105: int64 Int64Value;
+	106: uint64 UInt64Value;
+	107: float FloatValue;
+	108: double DoubleValue;
+	109: uint16 CharValue;
+	110: bool BooleanValue;
+	111: wstring WStringValue;
+	112: int64 DateTimeOffsetValue;
+	113: int64 TimeSpanValue;
+	114: vector<UUID> GuidValue;
+	115: vector<Point> PointValue;
+	116: vector<Size> SizeValue;
+	117: vector<Rect> RectValue;
+	118: vector<ValueSet> ValueSetValue;
+
+	119: string StringValue;
+
+	200: vector<uint8> UInt8ArrayValue;
+	201: vector<int16> Int16ArrayValue;
+	202: vector<uint16> UInt16ArrayValue;
+	203: vector<int32> Int32ArrayValue;
+	204: vector<uint32> UInt32ArrayValue;
+	205: vector<int64> Int64ArrayValue;
+	206: vector<uint64> UInt64ArrayValue;
+	207: vector<float> FloatArrayValue;
+	208: vector<double> DoubleArrayValue;
+	209: vector<uint16> CharArrayValue;
+	210: vector<uint8> BooleanArrayValue;
+	211: vector<wstring> WStringArrayValue;
+	212: vector<int64> DateTimeOffsetArrayValue;
+	213: vector<int64> TimeSpanArrayValue;
+	214: vector<UUID> GuidArrayValue;
+	215: vector<Point> PointArrayValue;
+	216: vector<Size> SizeArrayValue;
+	217: vector<Rect> RectArrayValue;
+
+	219: vector<string> StringArrayValue;
+}
+
+struct ValueSet {
+	1: map<wstring, PropertyValue> Entries;
+}
