@@ -8,13 +8,20 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Bond.CSharp" Version="13.0.2" />
-		<PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
 		<PackageReference Include="System.CodeDom" Version="10.0.8" />
 	</ItemGroup>
 
 	<ItemGroup>
 		<None Include="../README.md" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <ProjectReference Include="..\schema\Schema.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- Disable dynamic code to debug Linq Expressions -->
+		<RuntimeHostConfigurationOption Include="System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported" Value="false" />
 	</ItemGroup>
 
 </Project>

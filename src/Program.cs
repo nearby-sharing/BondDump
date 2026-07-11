@@ -4,6 +4,7 @@ using Bond.IO.Unsafe;
 using Bond.Protocols;
 using BondDump;
 using Microsoft.CSharp;
+using ShortDev.Microsoft.ConnectedDevices.Serialization;
 using System.CodeDom;
 using System.Linq.Expressions;
 
