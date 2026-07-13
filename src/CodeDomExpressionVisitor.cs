@@ -12,21 +12,26 @@ public sealed class CodeDomExpressionVisitor
 {
     public static CodeDomExpressionVisitor Instance => field ??= new();
 
+    string _baseName = "";
+    CodeTypeDeclaration _typeDeclaration = null!;
     Scope _currentScope;
     public CodeDomExpressionVisitor()
     {
         _currentScope = new() { Parent = null };
     }
 
-    public CodeMemberMethod Convert(LambdaExpression lambda, string name)
+    public CodeMemberMethod Convert(LambdaExpression lambda, CodeTypeDeclaration declaringType, string name)
     {
         ArgumentOutOfRangeException.ThrowIfNotEqual(lambda.TailCall, false);
 
+        _baseName = name;
+        _typeDeclaration = declaringType;
         _currentScope = new() { Parent = null };
 
         CodeMemberMethod method = new()
         {
             Name = name,
+            Attributes = MemberAttributes.Public | MemberAttributes.Static,
             ReturnType = new(lambda.ReturnType),
         };
         method.Parameters.AddRange([.. lambda.Parameters.Select(x => new CodeParameterDeclarationExpression(new CodeTypeReference(x.Type), x.Name))]);
@@ -48,6 +53,7 @@ public sealed class CodeDomExpressionVisitor
         IndexExpression indexExpression => VisitIndex(indexExpression),
         MethodCallExpression callExpression => VisitMethodCall(callExpression),
         InvocationExpression invocationExpression => VisitInvocation(invocationExpression),
+        InvokeRecursiveExpression invokeRecursiveExpression => VisitRecursiveInvocation(invokeRecursiveExpression),
         MemberExpression memberExpression => VisitMemberAccess(memberExpression),
         DefaultExpression defaultExpression => VisitDefault(defaultExpression),
         ParameterExpression parameterExpression => VisitParameter(parameterExpression),
@@ -174,6 +180,22 @@ public sealed class CodeDomExpressionVisitor
 
     private CodeObject VisitInvocation(InvocationExpression invocation)
         => Visit(InlineLambdaVisitor.Execute(invocation));
+
+    private CodeMethodInvokeExpression VisitRecursiveInvocation(InvokeRecursiveExpression invocation)
+    {
+        if (invocation.LambdaIndex is not ConstantExpression { Value: int index })
+            throw new InvalidOperationException("Recursive calls must use a constant index");
+
+        return new CodeMethodInvokeExpression(
+            new CodeTypeReferenceExpression(_typeDeclaration.Name),
+            methodName: index switch
+            {
+                0 => _baseName,
+                _ => $"{_baseName}{index}"
+            },
+            [.. invocation.Arguments.Select(Visit).Cast<CodeExpression>()]
+        );
+    }
 
     private CodeObject VisitMemberAccess(MemberExpression member)
     {
@@ -313,6 +335,9 @@ public sealed class CodeDomExpressionVisitor
 
 sealed class InlineLambdaVisitor(Dictionary<ParameterExpression, Expression> lookup) : ExpressionVisitor
 {
+    protected override Expression VisitLambda<T>(Expression<T> node)
+        => throw new NotSupportedException("Cannot invoke lambda inside a lambda");
+
     protected override Expression VisitParameter(ParameterExpression node)
     {
         if (lookup.TryGetValue(node, out var replacement))
@@ -325,9 +350,10 @@ sealed class InlineLambdaVisitor(Dictionary<ParameterExpression, Expression> loo
         if (invocation.Expression is not LambdaExpression lambda)
             throw new NotImplementedException($"Can only inline lambdas");
 
-        foreach (var arg in invocation.Arguments)
-            if (arg is not (ConstantExpression or ParameterExpression))
-                throw new NotImplementedException("Can only inline primitive args");
+        // ToDo: Ignoring this check may change behavior!!
+        //foreach (var arg in invocation.Arguments)
+        //    if (arg is not (ConstantExpression or ParameterExpression))
+        //        throw new NotImplementedException("Can only inline primitive args");
 
         var args = invocation.Arguments;
         var parameters = lambda.Parameters;
