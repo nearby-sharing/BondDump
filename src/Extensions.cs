@@ -1,40 +1,25 @@
-﻿using System.CodeDom;
-using System.CodeDom.Compiler;
+﻿using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using static Microsoft.CodeAnalysis.CSharp.SyntaxFactory;
 
 namespace BondDump;
 
 internal static class Extensions
 {
-    extension(CodeObject obj)
+    extension(CSharpSyntaxNode obj)
     {
-        public CodeStatement ToStatement() => obj switch
+        public StatementSyntax ToStatement() => obj switch
         {
-            CodeStatement stmt => stmt,
-            CodeSnippetExpression { Value: null or "" } => new CodeSnippetStatement(),
-            CodeBinaryOperatorExpression { Operator: CodeBinaryOperatorType.Assign } assignExpr => new CodeAssignStatement(assignExpr.Left, assignExpr.Right),
-            CodeExpression expr => new CodeExpressionStatement(expr),
+            StatementSyntax stmt => stmt,
+            ExpressionSyntax expr => ExpressionStatement(expr),
             _ => throw new InvalidCastException()
         };
 
-        public CodeStatement[] ToStatements() => obj.ToStatement() switch
+        public BlockSyntax ToStatements() => obj.ToStatement() switch
         {
-            CodeConditionStatement { Condition: CodePrimitiveExpression { Value: true } } block => [.. block.TrueStatements.Cast<CodeStatement>()
-                .Where(x => x is not CodeSnippetStatement { Value: null or "" })
-            ],
-            CodeSnippetStatement { Value: null or "" } => [],
-            var stmt => [stmt]
+            BlockSyntax block => block,
+            var stmt => Block(List([stmt])),
         };
-    }
-
-    extension(CodeDomProvider provider)
-    {
-        public string Compile(CodeCompileUnit unit, CodeGeneratorOptions? options = null)
-        {
-            using StringWriter writer = new();
-            using IndentedTextWriter indentedWriter = new(writer);
-            provider.GenerateCodeFromCompileUnit(unit, indentedWriter, options ?? new());
-            return writer.ToString();
-        }
     }
 
     extension<T>(IEnumerable<T?> source)
@@ -46,4 +31,7 @@ internal static class Extensions
                     yield return item;
         }
     }
+
+    public static string Join<T>(this IEnumerable<T> values, char separator)
+        => string.Join(separator, values);
 }

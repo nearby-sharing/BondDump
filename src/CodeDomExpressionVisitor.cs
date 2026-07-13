@@ -1,8 +1,12 @@
-﻿using System.Buffers.Binary;
-using System.CodeDom;
+﻿using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using System.Buffers.Binary;
 using System.Collections.ObjectModel;
 using System.Linq.Expressions;
 using System.Reflection;
+using static BondDump.SyntaxUtils;
+using static Microsoft.CodeAnalysis.CSharp.SyntaxFactory;
 
 namespace BondDump;
 
@@ -13,14 +17,14 @@ public sealed class CodeDomExpressionVisitor
     public static CodeDomExpressionVisitor Instance => field ??= new();
 
     string _baseName = "";
-    CodeTypeDeclaration _typeDeclaration = null!;
+    ClassDeclarationSyntax _typeDeclaration = null!;
     Scope _currentScope;
     public CodeDomExpressionVisitor()
     {
         _currentScope = new() { Parent = null };
     }
 
-    public CodeMemberMethod Convert(LambdaExpression lambda, CodeTypeDeclaration declaringType, string name)
+    public MethodDeclarationSyntax Convert(LambdaExpression lambda, ClassDeclarationSyntax declaringType, string name)
     {
         ArgumentOutOfRangeException.ThrowIfNotEqual(lambda.TailCall, false);
 
@@ -28,22 +32,18 @@ public sealed class CodeDomExpressionVisitor
         _typeDeclaration = declaringType;
         _currentScope = new() { Parent = null };
 
-        CodeMemberMethod method = new()
-        {
-            Name = name,
-            Attributes = MemberAttributes.Public | MemberAttributes.Static,
-            ReturnType = new(lambda.ReturnType),
-        };
-        method.Parameters.AddRange([.. lambda.Parameters.Select(x => new CodeParameterDeclarationExpression(new CodeTypeReference(x.Type), x.Name))]);
-        method.Statements.AddRange(Visit(lambda.Body) switch
-        {
-            CodeExpression expression => [new CodeMethodReturnStatement(expression)],
-            var obj => obj.ToStatements()
-        });
-        return method;
+        return MethodDeclaration(Type(lambda.ReturnType), name)
+            .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
+            .AddParameterListParameters([.. lambda.Parameters
+                .Select(x =>
+                    Parameter(Identifier(x.Name))
+                        .WithType(Type(x.Type))
+                )
+            ])
+            .WithBody(Visit(lambda.Body).ToStatements());
     }
 
-    CodeObject Visit(Expression exp) => exp switch
+    CSharpSyntaxNode Visit(Expression exp) => exp switch
     {
         null => null!, // ToDo
         ConstantExpression constantExpression => VisitConstant(constantExpression),
@@ -66,206 +66,215 @@ public sealed class CodeDomExpressionVisitor
         _ => throw new NotImplementedException($"Expression of type {exp.GetType()} is not supported")
     };
 
-    private static CodeExpression VisitConstant(ConstantExpression c)
+    private static ExpressionSyntax VisitConstant(ConstantExpression c)
     {
         if (c.Value == null)
         {
-            return new CodePrimitiveExpression(null);
+            return LiteralExpression(SyntaxKind.NullLiteralExpression);
         }
         else if (c.Value.GetType().IsPrimitive || c.Value.GetType() == typeof(string))
         {
-            return new CodePrimitiveExpression(c.Value);
+            return LiteralExpression(c.Value);
         }
         else if (c.Value.GetType().IsEnum)
         {
-            return new CodeFieldReferenceExpression(
-                targetObject: new CodeTypeReferenceExpression(c.Value.GetType()),
-                fieldName: Enum.GetName(c.Value.GetType(), c.Value)
+            return MemberAccessExpression(
+                SyntaxKind.SimpleMemberAccessExpression,
+                Type(c.Value.GetType()),
+                IdentifierName(Enum.GetName(c.Value.GetType(), c.Value))
             );
         }
         else
         {
             // CompactBinary{Writer, Reader} does not use the metadata
             if (c.Type.FullName == "Bond.Metadata")
-                return new CodePrimitiveExpression(null);
+                return LiteralExpression(SyntaxKind.NullLiteralExpression);
 
             throw new NotImplementedException();
         }
     }
 
-    private CodeObject VisitUnary(UnaryExpression unary)
+    private ExpressionSyntax VisitUnary(UnaryExpression unary)
     {
         ArgumentOutOfRangeException.ThrowIfNotEqual(unary.Method, null);
 
-        var operand = (CodeExpression)Visit(unary.Operand);
+        var operand = (ExpressionSyntax)Visit(unary.Operand);
         return unary.NodeType switch
         {
-            ExpressionType.Convert => new CodeCastExpression(unary.Type, operand),
-            ExpressionType.Increment => new CodeBinaryOperatorExpression(operand, CodeBinaryOperatorType.Add, new CodePrimitiveExpression(value: 1)),
-            ExpressionType.PreIncrementAssign => new CodeBinaryOperatorExpression(operand, CodeBinaryOperatorType.Assign, new CodeBinaryOperatorExpression(operand, CodeBinaryOperatorType.Add, new CodePrimitiveExpression(value: 1))),
-            ExpressionType.PreDecrementAssign => new CodeBinaryOperatorExpression(operand, CodeBinaryOperatorType.Assign, new CodeBinaryOperatorExpression(operand, CodeBinaryOperatorType.Subtract, new CodePrimitiveExpression(value: 1))),
+            ExpressionType.Convert => CastExpression(Type(unary.Type), operand),
+            ExpressionType.Increment => BinaryExpression(SyntaxKind.AddExpression, operand, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1))),
+            ExpressionType.PreIncrementAssign => PrefixUnaryExpression(SyntaxKind.PreIncrementExpression, operand),
+            ExpressionType.PreDecrementAssign => PrefixUnaryExpression(SyntaxKind.PreDecrementExpression, operand),
+            ExpressionType.PostIncrementAssign => PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, operand),
+            ExpressionType.PostDecrementAssign => PostfixUnaryExpression(SyntaxKind.PostDecrementExpression, operand),
             _ => throw new NotImplementedException($"Unary operation {unary.NodeType} not supported")
         };
     }
 
-    private CodeBinaryOperatorExpression VisitBinary(BinaryExpression binary)
+    private ExpressionSyntax VisitBinary(BinaryExpression binary)
     {
         ArgumentOutOfRangeException.ThrowIfNotEqual(binary.Conversion, null);
 
-        binary = FixLoopConditionVisitor.Execute(binary);
-
-        return new CodeBinaryOperatorExpression(
-            (CodeExpression)Visit(binary.Left),
+        return BinaryExpressionEx(
             BindOperant(binary.NodeType),
-            (CodeExpression)Visit(binary.Right)
+            (ExpressionSyntax)Visit(binary.Left),
+            (ExpressionSyntax)Visit(binary.Right)
         );
     }
 
-    private static CodeBinaryOperatorType BindOperant(ExpressionType type) => type switch
+    private static SyntaxKind BindOperant(ExpressionType type) => type switch
     {
-        ExpressionType.Add or ExpressionType.AddChecked => CodeBinaryOperatorType.Add,
-        ExpressionType.And => CodeBinaryOperatorType.BitwiseAnd,
-        ExpressionType.AndAlso => CodeBinaryOperatorType.BooleanAnd,
-        ExpressionType.Or => CodeBinaryOperatorType.BitwiseOr,
-        ExpressionType.OrElse => CodeBinaryOperatorType.BooleanOr,
-        ExpressionType.Equal => CodeBinaryOperatorType.IdentityEquality,
-        ExpressionType.NotEqual => CodeBinaryOperatorType.IdentityInequality,
-        ExpressionType.GreaterThan => CodeBinaryOperatorType.GreaterThan,
-        ExpressionType.GreaterThanOrEqual => CodeBinaryOperatorType.GreaterThanOrEqual,
-        ExpressionType.LessThan => CodeBinaryOperatorType.LessThan,
-        ExpressionType.LessThanOrEqual => CodeBinaryOperatorType.LessThanOrEqual,
-        ExpressionType.Multiply or ExpressionType.MultiplyChecked => CodeBinaryOperatorType.Multiply,
-        ExpressionType.Subtract or ExpressionType.SubtractChecked => CodeBinaryOperatorType.Subtract,
-        ExpressionType.Power or ExpressionType.Divide => CodeBinaryOperatorType.Divide,
-        ExpressionType.Modulo => CodeBinaryOperatorType.Modulus,
-        ExpressionType.Assign => CodeBinaryOperatorType.Assign,
+        ExpressionType.Add or ExpressionType.AddChecked => SyntaxKind.AddExpression,
+        ExpressionType.And => SyntaxKind.BitwiseAndExpression,
+        ExpressionType.AndAlso => SyntaxKind.LogicalAndExpression,
+        ExpressionType.Or => SyntaxKind.BitwiseOrExpression,
+        ExpressionType.OrElse => SyntaxKind.LogicalOrExpression,
+        ExpressionType.Equal => SyntaxKind.EqualsExpression,
+        ExpressionType.NotEqual => SyntaxKind.NotEqualsExpression,
+        ExpressionType.GreaterThan => SyntaxKind.GreaterThanExpression,
+        ExpressionType.GreaterThanOrEqual => SyntaxKind.GreaterThanOrEqualExpression,
+        ExpressionType.LessThan => SyntaxKind.LessThanExpression,
+        ExpressionType.LessThanOrEqual => SyntaxKind.LessThanOrEqualExpression,
+        ExpressionType.Multiply or ExpressionType.MultiplyChecked => SyntaxKind.MultiplyExpression,
+        ExpressionType.Subtract or ExpressionType.SubtractChecked => SyntaxKind.SubtractExpression,
+        ExpressionType.Power or ExpressionType.Divide => SyntaxKind.DivideExpression,
+        ExpressionType.Modulo => SyntaxKind.ModuloExpression,
+        ExpressionType.Assign => SyntaxKind.SimpleAssignmentExpression,
         _ => throw new NotImplementedException($"Operator {type} is not implemented"),
     };
 
-    private CodeObjectCreateExpression VisitNew(NewExpression newExpression)
+    private ObjectCreationExpressionSyntax VisitNew(NewExpression newExpression)
     {
         var args = VisitExpressionList(newExpression.Arguments);
-        return new CodeObjectCreateExpression(
-            newExpression.Type,
-            [.. args]
+        return ObjectCreationExpression(
+            Type(newExpression.Type),
+            ArgumentList(SeparatedList(args.Select(Argument))),
+            initializer: null
         );
     }
 
-    private CodeIndexerExpression VisitIndex(IndexExpression index) => new(
-        targetObject: (CodeExpression)Visit(index.Object),
-        [.. index.Arguments.Select(Visit).Cast<CodeExpression>()]
+    private ElementAccessExpressionSyntax VisitIndex(IndexExpression index) => ElementAccessExpression(
+        expression: (ExpressionSyntax)Visit(index.Object),
+        BracketedArgumentList(SeparatedList(index.Arguments.Select(Visit).Cast<ExpressionSyntax>().Select(Argument)))
     );
 
-    private CodeMethodInvokeExpression VisitMethodCall(MethodCallExpression m)
+    private InvocationExpressionSyntax VisitMethodCall(MethodCallExpression m)
     {
-        CodeObject obj = Visit(m.Object);
+        CSharpSyntaxNode obj = Visit(m.Object);
         var args = Enumerable.Zip(VisitExpressionList(m.Arguments), m.Method.GetParameters())
             .Select((arg) => arg.Second switch
             {
-                { IsIn: true } => new CodeDirectionExpression(FieldDirection.In, arg.First),
-                { IsOut: true } => new CodeDirectionExpression(FieldDirection.Out, arg.First),
+                { IsIn: true } => Argument(nameColon: null, Token(SyntaxKind.InKeyword), arg.First),
+                { IsOut: true } => Argument(nameColon: null, Token(SyntaxKind.OutKeyword), arg.First),
                 // ToDo: Ref??
-                _ => arg.First,
+                _ => Argument(arg.First),
             });
 
         if (obj == null)
-        {  //static method call
-            return new CodeMethodInvokeExpression(new CodeTypeReferenceExpression(m.Method.DeclaringType), m.Method.Name, [.. args]);
+        {
+            //static method call
+            return InvocationExpression(
+                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, Type(m.Method.DeclaringType), IdentifierName(m.Method.Name)),
+                ArgumentList(SeparatedList(args))
+            );
         }
         else
         {
-            return new CodeMethodInvokeExpression((CodeExpression)obj, m.Method.Name, [.. args]);
+            return InvocationExpression(
+                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, (ExpressionSyntax)obj, IdentifierName(m.Method.Name)),
+                ArgumentList(SeparatedList(args))
+            );
         }
     }
 
-    private CodeObject VisitInvocation(InvocationExpression invocation)
+    private CSharpSyntaxNode VisitInvocation(InvocationExpression invocation)
         => Visit(InlineLambdaVisitor.Execute(invocation));
 
-    private CodeMethodInvokeExpression VisitRecursiveInvocation(InvokeRecursiveExpression invocation)
+    private InvocationExpressionSyntax VisitRecursiveInvocation(InvokeRecursiveExpression invocation)
     {
         if (invocation.LambdaIndex is not ConstantExpression { Value: int index })
             throw new InvalidOperationException("Recursive calls must use a constant index");
 
-        return new CodeMethodInvokeExpression(
-            new CodeTypeReferenceExpression(_typeDeclaration.Name),
-            methodName: index switch
+        return InvocationExpression(
+            IdentifierName(index switch
             {
                 0 => _baseName,
                 _ => $"{_baseName}{index}"
-            },
-            [.. invocation.Arguments.Select(Visit).Cast<CodeExpression>()]
+            }),
+            ArgumentList(SeparatedList(invocation.Arguments.Select(Visit).Cast<ExpressionSyntax>().Select(Argument)))
         );
     }
 
-    private CodeObject VisitMemberAccess(MemberExpression member)
+    private MemberAccessExpressionSyntax VisitMemberAccess(MemberExpression member)
     {
-        var receiver = (CodeExpression)Visit(member.Expression);
+        var receiver = (ExpressionSyntax)Visit(member.Expression);
         return member switch
         {
-            { Member: FieldInfo field } => new CodeFieldReferenceExpression(receiver, field.Name),
-            { Member: PropertyInfo property } => new CodePropertyReferenceExpression(receiver, property.Name),
+            { Member: FieldInfo field } => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, receiver, IdentifierName(field.Name)),
+            { Member: PropertyInfo property } => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, receiver, IdentifierName(property.Name)),
             _ => throw new NotImplementedException()
         };
     }
 
-    private static CodeObject VisitDefault(DefaultExpression expr)
+    private static CSharpSyntaxNode VisitDefault(DefaultExpression expr)
     {
         if (expr.Type == typeof(void))
-            return new CodeSnippetExpression();
+            return Block();
 
-        return new CodeDefaultValueExpression(new CodeTypeReference(expr.Type));
+        return DefaultExpression(Type(expr.Type));
     }
 
-    private CodeObject VisitGoTo(GotoExpression exp) => exp.Kind switch
+    private StatementSyntax VisitGoTo(GotoExpression exp) => exp.Kind switch
     {
-        GotoExpressionKind.Goto => new CodeGotoStatement(exp.Target.Name),
-        GotoExpressionKind.Return => new CodeMethodReturnStatement((CodeExpression)Visit(exp.Value)),
-        GotoExpressionKind.Break => new CodeSnippetExpression("break"),
-        GotoExpressionKind.Continue => new CodeSnippetExpression("continue"),
+        GotoExpressionKind.Goto => GotoStatement(SyntaxKind.GotoStatement, IdentifierName(exp.Target.Name)),
+        GotoExpressionKind.Return => ReturnStatement((ExpressionSyntax)Visit(exp.Value)),
+        GotoExpressionKind.Break => BreakStatement(),
+        GotoExpressionKind.Continue => ContinueStatement(),
         _ => throw new NotImplementedException(),
     };
 
-    private CodeConditionStatement VisitConditional(ConditionalExpression c) => new(
-        (CodeExpression)Visit(c.Test),
+    private IfStatementSyntax VisitConditional(ConditionalExpression c) => IfStatement(
+        (ExpressionSyntax)Visit(c.Test),
         Visit(c.IfTrue).ToStatements(),
-        Visit(c.IfFalse).ToStatements()
+        ElseClause(Visit(c.IfFalse).ToStatements())
     );
 
-    private CodeIterationStatement VisitLoop(LoopExpression loop) => new(
-        initStatement: new CodeSnippetStatement(),
-        testExpression: new CodeSnippetExpression(),
-        incrementStatement: new CodeSnippetStatement(),
+    private WhileStatementSyntax VisitLoop(LoopExpression loop) => WhileStatement(
+        condition: LiteralExpression(SyntaxKind.TrueLiteralExpression),
         Visit(loop.Body).ToStatements()
     );
 
-    private CodeTryCatchFinallyStatement VisitTry(TryExpression exp)
+    private TryStatementSyntax VisitTry(TryExpression exp)
     {
         ArgumentOutOfRangeException.ThrowIfGreaterThan(exp.Handlers.Count, 0);
         ArgumentOutOfRangeException.ThrowIfNotEqual(exp.Fault, null);
 
-        return new(
-            tryStatements: Visit(exp.Body).ToStatements(),
-            catchClauses: [],
-            finallyStatements: Visit(exp.Finally).ToStatements()
+        return TryStatement(
+            Visit(exp.Body).ToStatements(),
+            List<CatchClauseSyntax>(),
+            FinallyClause(Visit(exp.Finally).ToStatements())
         );
     }
 
-    private CodeObject VisitBlock(BlockExpression block)
+    private BlockSyntax VisitBlock(BlockExpression block)
     {
         var oldScope = _currentScope;
         _currentScope = new() { Parent = oldScope, Variables = [.. block.Variables.Select(x => x.Name).WhereNotNull()] };
         try
         {
-            List<CodeStatement> statements = [];
+            List<StatementSyntax> statements = [];
             foreach (var variable in block.Variables)
             {
-                statements.Add(new CodeVariableDeclarationStatement(new CodeTypeReference(variable.Type), _currentScope.Mangle(variable.Name)));
+                statements.Add(LocalDeclarationStatement(VariableDeclaration(
+                    Type(variable.Type),
+                    SeparatedList([VariableDeclarator(_currentScope.Mangle(variable.Name))])
+                )));
             }
             foreach (var expr in block.Expressions)
             {
-                statements.AddRange(Visit(expr).ToStatements());
+                statements.AddRange(Visit(expr).ToStatements().Statements);
             }
-            return new CodeConditionStatement(new CodePrimitiveExpression(value: true), [.. statements]);
+            return Block(statements);
         }
         finally
         {
@@ -273,15 +282,14 @@ public sealed class CodeDomExpressionVisitor
         }
     }
 
-    private ReadOnlyCollection<CodeExpression> VisitExpressionList(ReadOnlyCollection<Expression> original)
-        => [.. original.Select(Visit).Cast<CodeExpression>()];
+    private IEnumerable<ExpressionSyntax> VisitExpressionList(ReadOnlyCollection<Expression> original)
+        => original.Select(Visit).Cast<ExpressionSyntax>();
 
-    private CodeArgumentReferenceExpression VisitParameter(ParameterExpression p)
+    private IdentifierNameSyntax VisitParameter(ParameterExpression p)
     {
         ArgumentOutOfRangeException.ThrowIfNotEqual(p.IsByRef, false);
 
-        // ToDo: arg vs var
-        return new CodeArgumentReferenceExpression(_currentScope.Mangle(p.Name));
+        return IdentifierName(_currentScope.Mangle(p.Name));
     }
 
     sealed record Scope
@@ -362,21 +370,5 @@ sealed class InlineLambdaVisitor(Dictionary<ParameterExpression, Expression> loo
 
         InlineLambdaVisitor visitor = new(lookup);
         return visitor.Visit(lambda.Body);
-    }
-}
-
-sealed class FixLoopConditionVisitor : ExpressionVisitor
-{
-    public static BinaryExpression Execute(BinaryExpression expression)
-    {
-        if (expression is not
-            {
-                Left: UnaryExpression { Operand: var left, NodeType: ExpressionType.PostDecrementAssign },
-                NodeType: ExpressionType.GreaterThan,
-                Right: var right
-            })
-            return expression;
-
-        return Expression.GreaterThanOrEqual(Expression.PreDecrementAssign(left), right);
     }
 }
