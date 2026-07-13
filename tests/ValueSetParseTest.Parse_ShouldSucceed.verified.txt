@@ -288,8 +288,8 @@
               WStringValue: ,
               PointValue: [
                 {
-                  x: 120.0,
-                  y: 121.0
+                  X: 120.0,
+                  Y: 121.0
                 }
               ],
               StringValue: 
@@ -301,8 +301,8 @@
               StringValue: ,
               PointArrayValue: [
                 {
-                  x: 120.0,
-                  y: 121.0
+                  X: 120.0,
+                  Y: 121.0
                 }
               ]
             },
@@ -312,10 +312,10 @@
               WStringValue: ,
               RectValue: [
                 {
-                  x: 120.0,
-                  y: 121.0,
-                  width: 119.0,
-                  height: 104.0
+                  X: 120.0,
+                  Y: 121.0,
+                  Width: 119.0,
+                  Height: 104.0
                 }
               ],
               StringValue: 
@@ -327,10 +327,10 @@
               StringValue: ,
               RectArrayValue: [
                 {
-                  x: 120.0,
-                  y: 121.0,
-                  width: 119.0,
-                  height: 104.0
+                  X: 120.0,
+                  Y: 121.0,
+                  Width: 119.0,
+                  Height: 104.0
                 }
               ]
             },
@@ -340,8 +340,8 @@
               WStringValue: ,
               SizeValue: [
                 {
-                  width: 119.0,
-                  height: 104.0
+                  Width: 119.0,
+                  Height: 104.0
                 }
               ],
               StringValue: 
@@ -353,8 +353,8 @@
               StringValue: ,
               SizeArrayValue: [
                 {
-                  width: 119.0,
-                  height: 104.0
+                  Width: 119.0,
+                  Height: 104.0
                 }
               ]
             }

@@ -54,20 +54,20 @@ struct UUID {
 }
 
 struct Point {
-	0: float x;
-	1: float y;
+	0: float X;
+	1: float Y;
 }
 
 struct Size {
-	0: float width;
-	1: float height;
+	0: float Width;
+	1: float Height;
 }
 
 struct Rect {
-	0: float x;
-	1: float y;
-	2: float width;
-	3: float height;
+	0: float X;
+	1: float Y;
+	2: float Width;
+	3: float Height;
 }
 
 struct ValueSet;
