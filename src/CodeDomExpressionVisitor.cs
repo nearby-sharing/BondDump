@@ -98,7 +98,7 @@ public sealed class CodeDomExpressionVisitor
     {
         ArgumentOutOfRangeException.ThrowIfNotEqual(unary.Method, null);
 
-        var operand = (ExpressionSyntax)Visit(unary.Operand);
+        var operand = Visit(unary.Operand).ToExpression();
         return unary.NodeType switch
         {
             ExpressionType.Convert => CastExpression(Type(unary.Type), operand),
@@ -117,8 +117,8 @@ public sealed class CodeDomExpressionVisitor
 
         return BinaryExpressionEx(
             BindOperant(binary.NodeType),
-            (ExpressionSyntax)Visit(binary.Left),
-            (ExpressionSyntax)Visit(binary.Right)
+            Visit(binary.Left).ToExpression(),
+            Visit(binary.Right).ToExpression()
         );
     }
 
@@ -154,7 +154,7 @@ public sealed class CodeDomExpressionVisitor
     }
 
     private ElementAccessExpressionSyntax VisitIndex(IndexExpression index) => ElementAccessExpression(
-        expression: (ExpressionSyntax)Visit(index.Object),
+        expression: Visit(index.Object).ToExpression(),
         BracketedArgumentList(SeparatedList(index.Arguments.Select(Visit).Cast<ExpressionSyntax>().Select(Argument)))
     );
 
@@ -181,7 +181,7 @@ public sealed class CodeDomExpressionVisitor
         else
         {
             return InvocationExpression(
-                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, (ExpressionSyntax)obj, IdentifierName(m.Method.Name)),
+                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, obj.ToExpression(), IdentifierName(m.Method.Name)),
                 ArgumentList(SeparatedList(args))
             );
         }
@@ -207,7 +207,7 @@ public sealed class CodeDomExpressionVisitor
 
     private MemberAccessExpressionSyntax VisitMemberAccess(MemberExpression member)
     {
-        var receiver = (ExpressionSyntax)Visit(member.Expression);
+        var receiver = Visit(member.Expression).ToExpression();
         return member switch
         {
             { Member: FieldInfo field } => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, receiver, IdentifierName(field.Name)),
@@ -227,14 +227,14 @@ public sealed class CodeDomExpressionVisitor
     private StatementSyntax VisitGoTo(GotoExpression exp) => exp.Kind switch
     {
         GotoExpressionKind.Goto => GotoStatement(SyntaxKind.GotoStatement, IdentifierName(exp.Target.Name)),
-        GotoExpressionKind.Return => ReturnStatement((ExpressionSyntax)Visit(exp.Value)),
+        GotoExpressionKind.Return => ReturnStatement(Visit(exp.Value).ToExpression()),
         GotoExpressionKind.Break => BreakStatement(),
         GotoExpressionKind.Continue => ContinueStatement(),
         _ => throw new NotImplementedException(),
     };
 
     private IfStatementSyntax VisitConditional(ConditionalExpression c) => IfStatement(
-        (ExpressionSyntax)Visit(c.Test),
+        Visit(c.Test).ToExpression(),
         Visit(c.IfTrue).ToStatements(),
         ElseClause(Visit(c.IfFalse).ToStatements())
     );

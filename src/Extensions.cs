@@ -20,6 +20,28 @@ internal static class Extensions
             BlockSyntax block => block,
             var stmt => Block(List([stmt])),
         };
+
+        public ExpressionSyntax ToExpression() => obj switch
+        {
+            ExpressionSyntax expr => expr,
+            IfStatementSyntax { Condition: var cond, Statement.Unpacked: ExpressionStatementSyntax { Expression: var whenTrue }, Else: ElseClauseSyntax { Statement.Unpacked: ExpressionStatementSyntax { Expression: var whenFalse } } }
+                => ConditionalExpression(cond, whenTrue, whenFalse),
+            _ => throw new InvalidOperationException("Cannot coalece to expression")
+        };
+    }
+
+    extension(StatementSyntax statement)
+    {
+        public StatementSyntax Unpacked
+        {
+            get
+            {
+                if (statement is BlockSyntax { Statements: [var inner] })
+                    return inner;
+
+                return statement;
+            }
+        }
     }
 
     extension<T>(IEnumerable<T?> source)

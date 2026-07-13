@@ -88,11 +88,11 @@ struct PropertyValue {
 	111: wstring WStringValue;
 	112: int64 DateTimeOffsetValue;
 	113: int64 TimeSpanValue;
-	114: vector<UUID> GuidValue;
-	115: vector<Point> PointValue;
-	116: vector<Size> SizeValue;
-	117: vector<Rect> RectValue;
-	118: vector<ValueSet> ValueSetValue;
+	114: nullable<UUID> GuidValue;
+	115: nullable<Point> PointValue;
+	116: nullable<Size> SizeValue;
+	117: nullable<Rect> RectValue;
+	118: nullable<ValueSet> ValueSetValue;
 
 	119: string StringValue;
 
